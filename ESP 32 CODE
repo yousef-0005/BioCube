@@ -1,0 +1,89 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+
+#define DHTPIN 4       // D4 لحساس الحرارة والرطوبة
+#define DHTTYPE DHT22
+
+#define MQ4_PIN 34     // حساس غاز الميثان MQ-4 (analog)
+#define MQ135_PIN 35   // حساس جودة الهواء MQ-135 (analog)
+
+#define RELAY_FAN 15   // ريليه المروحة
+#define RELAY_HEATER 2 // ريليه السخان
+#define RELAY_MIXER 13 // ريليه شفرات الخلط
+
+DHT dht(DHTPIN, DHTTYPE);
+LiquidCrystal_I2C lcd(0x27, 16, 2);  // شاشة LCD I2C
+
+unsigned long lastMixTime = 0;
+const unsigned long mixInterval = 6L * 60L * 60L * 1000L; // كل 6 ساعات
+
+void setup() {
+  Serial.begin(115200);
+
+  dht.begin();
+  lcd.init();
+  lcd.backlight();
+
+  pinMode(RELAY_FAN, OUTPUT);
+  pinMode(RELAY_HEATER, OUTPUT);
+  pinMode(RELAY_MIXER, OUTPUT);
+
+  digitalWrite(RELAY_FAN, LOW);
+  digitalWrite(RELAY_HEATER, LOW);
+  digitalWrite(RELAY_MIXER, LOW);
+}
+
+void loop() {
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+  int mq4_val = analogRead(MQ4_PIN);
+  int mq135_val = analogRead(MQ135_PIN);
+
+  if (isnan(temperature) || isnan(humidity)) {
+    Serial.println("فشل قراءة DHT!");
+    return;
+  }
+
+  // عرض القيم
+  lcd.setCursor(0, 0);
+  lcd.print("T:");
+  lcd.print(temperature);
+  lcd.print("C H:");
+  lcd.print(humidity);
+
+  lcd.setCursor(0, 1);
+  lcd.print("MQ4:");
+  lcd.print(mq4_val);
+  lcd.print(" MQ135:");
+  lcd.print(mq135_val);
+
+  Serial.print("Temp: "); Serial.println(temperature);
+  Serial.print("Humidity: "); Serial.println(humidity);
+  Serial.print("MQ-4: "); Serial.println(mq4_val);
+  Serial.print("MQ-135: "); Serial.println(mq135_val);
+
+  // تحكم تلقائي
+  if (temperature < 35) {
+    digitalWrite(RELAY_HEATER, HIGH); // تشغيل السخان
+  } else {
+    digitalWrite(RELAY_HEATER, LOW);
+  }
+
+  if (humidity > 70 || mq135_val > 600) {
+    digitalWrite(RELAY_FAN, HIGH); // تشغيل المروحة
+  } else {
+    digitalWrite(RELAY_FAN, LOW);
+  }
+
+  // خلط دوري كل 6 ساعات
+  unsigned long now = millis();
+  if (now - lastMixTime > mixInterval) {
+    digitalWrite(RELAY_MIXER, HIGH);
+    delay(5000); // تشغيل الخلط 5 ثوانٍ
+    digitalWrite(RELAY_MIXER, LOW);
+    lastMixTime = now;
+  }
+
+  delay(5000);
+}
